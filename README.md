@@ -29,10 +29,11 @@ Switch the Selected Field
 Mission Type:
 Type N/S to switch between Normal and Special
 
-
-# YOU NEED PYTHON INSTALLED FOR THIS SCRIPT TO WORK
 Logic Type:
 Press T to toggle AND/OR
 
 Copy & Paste:
 Ctrl+C copies to the built-in clipboard, Ctrl+V pastes from it, replacing the current field with the clipboard data.
+
+
+# YOU NEED PYTHON INSTALLED FOR THIS SCRIPT TO WORK
