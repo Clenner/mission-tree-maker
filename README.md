@@ -29,6 +29,8 @@ Switch the Selected Field
 Mission Type:
 Type N/S to switch between Normal and Special
 
+
+# YOU NEED PYTHON INSTALLED FOR THIS SCRIPT TO WORK
 Logic Type:
 Press T to toggle AND/OR
 
