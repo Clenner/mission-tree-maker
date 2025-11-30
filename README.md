@@ -3,7 +3,7 @@ A mission tree maker, mainly meant for Astroneer
 
 
 # Canvas Controls
-Ctrl+P:
+P:
 Select an ID, then use arrow keys to move
 
 Left Click:
@@ -20,6 +20,12 @@ Delete Mission
 
 Save & Load:
 Ctrl+S to save, Ctrl+L to load.
+
+Q:
+Uses the movement ID from pressing P to select a mission and load more specific details about it.
+
+Ctrl+N
+Create a new Tree. Make sure to Save first, because I am too lazy to code autosave or a warning =/
 
 # Editor Controls
 
