@@ -34,7 +34,6 @@ clipboard = ""
 
 # Currently-selected ID for arrow-key moving (0 = none)
 moving_id = 0
-moving_speed = 4  # pixels per tick when moving with arrow keys
 
 
 # =====================================================================
@@ -60,7 +59,13 @@ def save_file_dialog():
             "type": m.type,
             "color": m.color,
             "logic": m.logic,
-            "dependencies": [d.id for d in m.dependencies]
+            "dependencies": [d.id for d in m.dependencies],
+            "mission": {
+                "desc": m.mission.get("desc", ""),
+                "task": m.mission.get("task", ""),
+                "item": m.mission.get("item", ""),
+                "rwrd": m.mission.get("rwrd", "")
+            }
         })
 
     with open(filepath, "w") as f:
@@ -74,7 +79,7 @@ def save_file_dialog():
 # FILE DIALOG LOAD
 # =====================================================================
 def load_file_dialog():
-    global next_id, free_ids
+    global next_id, free_ids, camera_x, camera_y
 
     filepath = filedialog.askopenfilename(
         filetypes=[("Astroneer Mission Tree", "*.anrmt"), ("All Files", "*.*")]
@@ -99,6 +104,12 @@ def load_file_dialog():
         new_m.type = m["type"]
         new_m.color = m["color"]
         new_m.logic = m.get("logic", "AND")
+        mission_block = m.get("mission", {})
+        new_m.mission["desc"] = mission_block.get("desc", "")
+        new_m.mission["task"] = mission_block.get("task", "")
+        new_m.mission["item"] = mission_block.get("item", "")
+        new_m.mission["rwrd"] = mission_block.get("rwrd", "")      # Load extra mission data (if present)
+
         missions.append(new_m)
         id_map[mid] = new_m
 
@@ -111,12 +122,17 @@ def load_file_dialog():
             if dep in id_map:
                 mission_obj.dependencies.append(id_map[dep])
                 id_map[dep].dependents.append(mission_obj)
+    
+    camera_x = 0
+    camera_y = 0
 
 
 # =====================================================================
 # MISSION CLASS
 # =====================================================================
 class Mission:
+    FONT = pygame.font.SysFont("consolas", 20)  # create once per class
+
     def __init__(self, x, y, mid):
         self.id = mid
         self.x = x
@@ -129,60 +145,68 @@ class Mission:
         self.dependencies = []
         self.dependents = []
         self.rect = pygame.Rect(self.x, self.y, 180, 60)
+        self.mission = {
+            "desc": "",
+            "task": "",
+            "item": "",
+            "rwrd": ""
+        }
 
     def contains(self, pos):
         px, py = pos
         return self.rect.collidepoint(px - camera_x, py - camera_y)
 
+    def wrap_text(self, text, font, max_width):
+        """Simple word-wrapping helper."""
+        words = text.split(" ")
+        lines = []
+        current = ""
+        for w in words:
+            test = f"{current} {w}".strip()
+            if font.size(test)[0] <= max_width:
+                current = test
+            else:
+                if current:
+                    lines.append(current)
+                current = w
+        if current:
+            lines.append(current)
+        return lines
+
     def draw(self, surf):
-        # draw_rect is screen-space rect
-        draw_rect = pygame.Rect(
-            self.rect.x + camera_x,
-            self.rect.y + camera_y,
-            self.rect.width,
-            self.rect.height
-        )
+        draw_rect = self.rect.move(camera_x, camera_y)
+        bg_color = (170, 170, 170) if self.type == "special" else pygame.Color(self.color)
 
-        bg = pygame.Color(self.color)
-        if self.type == "special":
-            bg = (170, 170, 170)
-
-        pygame.draw.rect(surf, bg, draw_rect, border_radius=10)
+        pygame.draw.rect(surf, bg_color, draw_rect, border_radius=10)
         pygame.draw.rect(surf, (0, 0, 0), draw_rect, 2, border_radius=10)
 
         # Checkmark
         if self.checked:
-            check = FONT.render("+", True, (0, 150, 0))
+            check = self.FONT.render("+", True, (0, 150, 0))
             surf.blit(check, (draw_rect.right - 20, draw_rect.bottom - 25))
 
-        # ===== TEXT WRAPPING =====
+        # Text wrapping
         max_width = self.rect.width - 10
-        words = self.text.split(" ")
-        lines = []
-        current = ""
+        lines = self.wrap_text(self.text, self.FONT, max_width)
 
-        for w in words:
-            test = current + (" " if current else "") + w
-            if FONT.size(test)[0] <= max_width:
-                current = test
-            else:
-                lines.append(current)
-                current = w
-        if current:
-            lines.append(current)
-
-        needed_height = 10 + len(lines) * 20 + 40
-        self.rect.height = max(60, needed_height)
+        # Dynamic height
+        line_h = 20
+        top_pad = 10
+        bottom_pad = 40
+        needed_height = top_pad + len(lines) * line_h + bottom_pad
+        if needed_height > self.rect.height:
+            self.rect.height = needed_height
+            draw_rect.height = needed_height
 
         y_offset = draw_rect.y + 5
         for line in lines:
-            txt = FONT.render(line, True, (0, 0, 0))
+            txt = self.FONT.render(line, True, (0, 0, 0))
             surf.blit(txt, (draw_rect.x + 5, y_offset))
-            y_offset += 20
+            y_offset += line_h
 
-        # Type + AND/OR tag (only show logic when 2+ dependencies)
-        logic_part = f" | {self.logic}" if len(self.dependencies) > 1 else ""
-        tag = FONT.render(f"{self.type}{logic_part}", True, (30, 30, 30))
+        # Type + logic tag
+        logic_text = f" | {self.logic}" if len(self.dependencies) > 1 else ""
+        tag = self.FONT.render(f"{self.type}{logic_text}", True, (30, 30, 30))
         surf.blit(tag, (draw_rect.x + 5, draw_rect.bottom - 22))
 
 
@@ -396,10 +420,68 @@ def draw_triangle_line(surface, start, end, color=(0, 0, 0), size=10, spacing=6)
 def draw_links():
     for m in missions:
         for d in m.dependencies:
-            start = (m.rect.centerx + camera_x, m.rect.centery + camera_y)
-            end = (d.rect.centerx + camera_x, d.rect.centery + camera_y)
+            start = ((m.rect.centerx + camera_x), (m.rect.centery + camera_y))
+            end = ((d.rect.centerx + camera_x), (d.rect.centery + camera_y))
             draw_triangle_line(screen, start, end, color=(0, 0, 0), size=10, spacing=6)
 
+def open_mission_popup(mission):
+    popup = tk.Toplevel()
+    popup.title(f"Edit Mission {mission.id} Details")
+    popup.geometry("600x850")  # extra space for instructions
+
+    # === Description ===
+    tk.Label(popup, text="Mission Description:").pack(anchor="w", padx=10, pady=(10, 0))
+    desc_box = tk.Text(popup, height=8)
+    desc_box.pack(fill="x", padx=10)
+    desc_box.insert("1.0", mission.mission.get("desc", ""))
+
+    # === Tasks ===
+    tk.Label(popup, text="Mission Tasks:").pack(anchor="w", padx=10, pady=(10, 0))
+    task_box = tk.Text(popup, height=4)
+    task_box.pack(fill="x", padx=10)
+    task_box.insert("1.0", mission.mission.get("task", ""))
+
+    # === Item ===
+    tk.Label(popup, text="Mission Item:").pack(anchor="w", padx=10, pady=(10, 0))
+    item_box = tk.Text(popup, height=2)
+    item_box.pack(fill="x", padx=10)
+    item_box.insert("1.0", mission.mission.get("item", ""))
+
+    # === Reward ===
+    tk.Label(popup, text="Mission Reward:").pack(anchor="w", padx=10, pady=(10, 0))
+    rwrd_box = tk.Text(popup, height=4)
+    rwrd_box.pack(fill="x", padx=10)
+    rwrd_box.insert("1.0", mission.mission.get("rwrd", ""))
+
+    # === Save + Close ===
+    def save_and_close():
+        mission.mission["desc"] = desc_box.get("1.0", "end").strip()
+        mission.mission["task"] = task_box.get("1.0", "end").strip()
+        mission.mission["item"] = item_box.get("1.0", "end").strip()
+        mission.mission["rwrd"] = rwrd_box.get("1.0", "end").strip()
+        popup.destroy()
+
+    tk.Button(popup, text="Save", command=save_and_close).pack(pady=10)
+
+    # === Instructions below Save button ===
+    instructions = (
+        "Format for Mission Tasks (example):\n"
+        "(name1,count1,task1),(name2,count2,task2)\n\n"
+        "Format for Mission Rewards (example):\n"
+        "(type1,count1,rew1),(type2,count2,rew2)\n\n"
+        "Mission Item can either be an item, or nothing.\n"
+        "If the box is blank, there is no mission item."
+    )
+    tk.Label(popup, text=instructions, justify="left", anchor="w").pack(anchor="w", padx=10, pady=(50,100))
+
+    # Force window on top
+    popup.lift()
+    popup.attributes("-topmost", True)
+    popup.after(100, lambda: popup.attributes("-topmost", False))
+
+    # 🔥 BLOCK pygame but exit automatically when popup closes
+    while popup.winfo_exists():
+        popup.update()
 
 # =====================================================================
 # MAIN LOOP
@@ -415,16 +497,19 @@ while True:
     # Get pressed keys once per frame
     pressed = pygame.key.get_pressed()
 
+    move_speed = 5
+    moving_speed = 4
+
     # If editor isn't open, allow camera WASD movement
     if not (editor and editor.active):
         if pressed[pygame.K_w]:
-            camera_y += 8
+            camera_y += move_speed
         if pressed[pygame.K_s]:
-            camera_y -= 8
+            camera_y -= move_speed
         if pressed[pygame.K_a]:
-            camera_x += 8
+            camera_x += move_speed
         if pressed[pygame.K_d]:
-            camera_x -= 8
+            camera_x -= move_speed
 
     # If moving_id is active (>0), move that mission with arrow keys
     if moving_id:
@@ -493,6 +578,26 @@ while True:
                 except Exception as ex:
                     save_message = f"Error: {ex}"
                     save_message_time = time.time()
+            
+            # Q = open mission popup for the selected ID
+            if event.key == pygame.K_q and not (editor and editor.active):
+                if moving_id != 0:
+                    # find that mission object
+                    target = next((mm for mm in missions if mm.id == moving_id), None)
+                    if target: open_mission_popup(target)
+                    else: print("No mission with that ID exists.")
+                else: print("No mission ID selected. Press P to select one.")
+
+
+            # Ctrl+N - create a fresh mission tree (wipe everything)
+            if event.key == pygame.K_n and mods & pygame.KMOD_CTRL:
+                missions.clear()
+                free_ids.clear()
+                camera_x = 0
+                camera_y = 0
+                next_id = 1     # reset ID counter back to 1 (or whatever your base is)
+                moving_id = 0
+                editor = None
 
         # When editor is active, forward events to the editor only
         if editor and editor.active:
@@ -570,6 +675,11 @@ while True:
         screen.blit(msg, (WIDTH // 2 - msg.get_width() // 2, 20))
     else:
         save_message = ""
+
+    try:
+        tk_root.update()
+    except:
+        pass
 
     pygame.display.flip()
     clock.tick(60)
